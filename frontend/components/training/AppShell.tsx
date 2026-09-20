@@ -1,3 +1,26 @@
-import Link from "next/link";
-const links=[["/training","▦","Dashboard"],["/training/sessions","◷","Sessions"],["/training/attendance","✓","Attendance"],["/training/assessments","✎","Assessments"],["/training/results","★","Final Results"]];
-export default function AppShell({active,children}:{active:string;children:React.ReactNode}){return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">✦</span><span>Training Hub</span></div><p className="nav-label">WORKSPACE</p><nav>{links.map(([href,icon,label])=><Link key={href} className={`nav-link ${active===href?"active":""}`} href={href}><span className="nav-icon">{icon}</span><span>{label}</span></Link>)}</nav><div className="help"><strong>Need help?</strong>Contact your training administrator.</div></aside><main className="main"><header className="header"><div className="crumb">Training / <strong>Workspace</strong></div><div className="user"><div className="avatar">AD</div><span>Administrator</span></div></header>{children}</main></div>}
+import NavLinks from "./NavLinks";
+
+/** Sidebar + header around every /training page. */
+export default function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">✦</span>
+          <span>Training Hub</span>
+        </div>
+        <p className="nav-label">WORKSPACE</p>
+        <NavLinks />
+      </aside>
+
+      <main className="main">
+        <header className="header">
+          <div className="crumb">
+            Training / <strong>Attendance &amp; Assessment</strong>
+          </div>
+        </header>
+        {children}
+      </main>
+    </div>
+  );
+}

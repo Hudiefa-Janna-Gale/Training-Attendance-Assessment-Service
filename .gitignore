@@ -1,0 +1,4 @@
+# docker compose settings (copy .env.example)
+.env
+
+.DS_Store

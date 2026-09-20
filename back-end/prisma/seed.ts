@@ -7,7 +7,7 @@
 //   P-003  attended 2/3 days, scored 71  → PASS
 //   P-004  attended 3/3 days, scored 55  → FAIL (attendance fine, score below 60)
 //   P-005  attended 1/3 days, scored 90  → FAIL (score fine, attendance short)
-//   P-006  attended 3/3 days, no score   → PENDING
+//   P-006  attended 3/3 days, no score   → FAIL (no final score: "otherwise FAIL")
 
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';

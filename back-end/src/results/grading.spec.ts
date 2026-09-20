@@ -2,7 +2,6 @@ import {
   evaluateWorkshopResult,
   REQUIRED_DAYS,
   scoreResult,
-  TOTAL_DAYS,
 } from './grading.js';
 
 describe('scoreResult', () => {
@@ -23,11 +22,10 @@ describe('scoreResult', () => {
   });
 });
 
-describe('evaluateWorkshopResult', () => {
+describe('evaluateWorkshopResult (the brief: >= 2 of 3 days AND final score >= 60)', () => {
   const passMark = 60;
 
-  it("uses the brief's thresholds (2 of 3 days)", () => {
-    expect(TOTAL_DAYS).toBe(3);
+  it('requires attending 2 days', () => {
     expect(REQUIRED_DAYS).toBe(2);
   });
 
@@ -50,13 +48,10 @@ describe('evaluateWorkshopResult', () => {
     },
   );
 
-  it('is PENDING (not FAIL) until a final score exists', () => {
+  it('is FAIL when there is no final score ("otherwise their result is FAIL")', () => {
     expect(
       evaluateWorkshopResult({ daysAttended: 3, finalScore: null, passMark }),
-    ).toBe('PENDING');
-    expect(
-      evaluateWorkshopResult({ daysAttended: 0, finalScore: null, passMark }),
-    ).toBe('PENDING');
+    ).toBe('FAIL');
   });
 
   it("uses the assessment's own pass mark rather than a hard-coded 60", () => {

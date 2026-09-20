@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
 import { AssessmentsModule } from './assessments/assessments.module.js';
 import { AttendanceModule } from './attendance/attendance.module.js';
 import { validateEnv } from './config/env.validation.js';
@@ -19,7 +17,7 @@ import { SessionsModule } from './sessions/sessions.module.js';
     AssessmentsModule,
     ResultsModule,
   ],
-  controllers: [AppController, HealthController],
-  providers: [AppService],
+  // Besides the brief's endpoints only /health exists: the Docker healthcheck needs it.
+  controllers: [HealthController],
 })
 export class AppModule {}

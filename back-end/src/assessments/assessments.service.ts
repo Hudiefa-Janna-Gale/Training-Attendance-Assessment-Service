@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AssessmentResult, AssessmentType } from '../generated/prisma/enums.js';
+import { AssessmentType } from '../generated/prisma/enums.js';
 import { IdGeneratorService } from '../prisma/id-generator.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { scoreResult } from '../results/grading.js';
@@ -13,6 +13,7 @@ import {
   ScoreListResponseDto,
   ScoreResponseDto,
   toAssessmentResponse,
+  toScoreItem,
   toScoreResponse,
 } from './dto/assessment-response.dto.js';
 import { CreateAssessmentDto } from './dto/create-assessment.dto.js';
@@ -121,6 +122,7 @@ export class AssessmentsService {
     return toScoreResponse(score);
   }
 
+  /** The assessment with all its scores, shaped like the brief's sample data. */
   async listScores(assessmentId: string): Promise<ScoreListResponseDto> {
     const assessment = await this.requireAssessment(assessmentId);
 
@@ -128,16 +130,10 @@ export class AssessmentsService {
       where: { assessmentId },
       orderBy: { participantId: 'asc' },
     });
-    const passed = scores.filter(
-      (s) => s.result === AssessmentResult.PASS,
-    ).length;
 
     return {
-      assessment_id: assessment.assessmentId,
-      total_marks: assessment.totalMarks,
-      pass_mark: assessment.passMark,
-      summary: { total: scores.length, passed, failed: scores.length - passed },
-      scores: scores.map(toScoreResponse),
+      ...toAssessmentResponse(assessment),
+      scores: scores.map(toScoreItem),
     };
   }
 

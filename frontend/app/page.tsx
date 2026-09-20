@@ -1,3 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function Home() { redirect("/training"); }
+export default function Home() {
+  redirect("/training/sessions");
+}

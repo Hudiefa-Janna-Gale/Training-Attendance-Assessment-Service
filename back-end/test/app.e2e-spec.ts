@@ -1,5 +1,5 @@
 // End-to-end tests against a real PostgreSQL (docker compose `db`, migrated).
-//   docker compose up -d db && npm run db:deploy && npm run test:e2e
+//   (cd .. && docker compose up -d db) && npm run db:deploy && npm run test:e2e
 //
 // Every row created here belongs to a throw-away workshop and is deleted afterwards,
 // so it is safe to run against your development database.
@@ -43,9 +43,16 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
   });
 
   describe('service', () => {
-    it('GET / describes the service', async () => {
-      const res = await http().get('/').expect(200);
-      expect(res.body).toMatchObject({ group: 'SD-Group 6', docs: '/docs' });
+    it("exposes nothing beyond the brief's endpoints (no root page, no list or workshop routes)", async () => {
+      for (const route of [
+        '/',
+        '/sessions',
+        '/assessments',
+        '/workshops',
+        '/workshops/WS-1/results',
+      ]) {
+        await http().get(route).expect(404);
+      }
     });
 
     it('GET /health reports the database as up', async () => {
@@ -67,8 +74,7 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
 
     it("POST /sessions creates a session exactly as in the brief's sample data", async () => {
       const res = await http().post('/sessions').send(body()).expect(201);
-      expect(res.body).toMatchObject(body());
-      expect(res.body.created_at).toEqual(expect.any(String));
+      expect(res.body).toEqual(body()); // exactly the brief's fields, nothing more
     });
 
     it('GET /sessions/:id returns it (date round-trips as YYYY-MM-DD)', async () => {
@@ -139,7 +145,7 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
   });
 
   describe('attendance', () => {
-    it("POST /sessions/:id/attendance records the brief's sample and returns the list with a summary", async () => {
+    it("POST /sessions/:id/attendance records the brief's sample and returns the list", async () => {
       const res = await http()
         .post(`/sessions/${sid(1)}/attendance`)
         .send({
@@ -151,12 +157,13 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
         })
         .expect(201);
 
-      expect(res.body.session_id).toBe(sid(1));
-      expect(res.body.summary).toEqual({
-        present: 2,
-        absent: 1,
-        excused: 0,
-        total: 3,
+      expect(res.body).toEqual({
+        session_id: sid(1),
+        records: [
+          { participant_id: 'P-001', status: 'present' },
+          { participant_id: 'P-002', status: 'absent' },
+          { participant_id: 'P-003', status: 'present' },
+        ],
       });
     });
 
@@ -179,12 +186,11 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
         .send({ records: [{ participant_id: 'P-002', status: 'excused' }] })
         .expect(201);
 
-      expect(res.body.summary).toEqual({
-        present: 2,
-        absent: 0,
-        excused: 1,
-        total: 3,
-      });
+      expect(res.body.records).toEqual([
+        { participant_id: 'P-001', status: 'present' },
+        { participant_id: 'P-002', status: 'excused' },
+        { participant_id: 'P-003', status: 'present' },
+      ]);
       expect(
         await prisma.attendanceRecord.count({
           where: { sessionId: sid(1), participantId: 'P-002' },
@@ -326,16 +332,24 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
       expect((await post('P-059', 59).expect(201)).body.result).toBe('FAIL');
     });
 
-    it('GET /assessments/:id/scores lists every score with a summary', async () => {
+    it("GET /assessments/:id/scores returns the assessment with its scores, like the brief's sample", async () => {
       const res = await http()
         .get(`/assessments/${aid(1)}/scores`)
         .expect(200);
       expect(res.body).toMatchObject({
         assessment_id: aid(1),
+        workshop_id: WS,
+        title: 'Day 3 Final Assessment',
+        day: 3,
         total_marks: 100,
         pass_mark: 60,
-        summary: { total: 5, passed: 3, failed: 2 },
       });
+      expect(res.body.scores).toHaveLength(5);
+      expect(Object.keys(res.body.scores[0]).sort()).toEqual([
+        'participant_id',
+        'result',
+        'score',
+      ]);
       expect(res.body.scores).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -445,51 +459,40 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
     });
 
     it('PASS — attended all 3 days, scored 82', async () => {
-      expect(await result('P-001')).toMatchObject({
+      expect(await result('P-001')).toEqual({
         participant_id: 'P-001',
         workshop_id: WS,
         result: 'PASS',
-        attendance: {
-          days_attended: 3,
-          days_present: [1, 2, 3],
-          total_days: 3,
-          required_days: 2,
-          met: true,
-        },
-        final_assessment: {
-          assessment_id: aid(1),
-          score: 82,
-          total_marks: 100,
-          pass_mark: 60,
-          met: true,
-        },
+        days_attended: 3,
+        final_score: 82,
       });
     });
 
     it('FAIL — scored 45 and attended only day 3 (excused/absent do not count)', async () => {
       expect(await result('P-002')).toMatchObject({
         result: 'FAIL',
-        attendance: { days_attended: 1, days_present: [3], met: false },
-        final_assessment: { score: 45, met: false },
+        days_attended: 1,
+        final_score: 45,
       });
     });
 
     it('PASS — exactly 2 days (days 1 and 3) and scored 71', async () => {
       expect(await result('P-003')).toMatchObject({
         result: 'PASS',
-        attendance: { days_attended: 2, days_present: [1, 3], met: true },
+        days_attended: 2,
+        final_score: 71,
       });
     });
 
     it('FAIL — scored exactly 60 (a pass on the score) but attended only 1 day', async () => {
       expect(await result('P-060')).toMatchObject({
         result: 'FAIL',
-        attendance: { days_attended: 1, met: false },
-        final_assessment: { score: 60, met: true },
+        days_attended: 1,
+        final_score: 60,
       });
     });
 
-    it('PENDING — attended but no final score recorded yet', async () => {
+    it('FAIL — attended 2 days but has no final score ("otherwise their result is FAIL")', async () => {
       await http()
         .post(`/sessions/${sid(3)}/attendance`)
         .send({ records: [{ participant_id: 'P-777', status: 'present' }] })
@@ -500,16 +503,17 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
         .expect(201);
 
       expect(await result('P-777')).toMatchObject({
-        result: 'PENDING',
-        attendance: { days_attended: 2 },
-        final_assessment: { score: null, met: null },
+        result: 'FAIL',
+        days_attended: 2,
+        final_score: null,
       });
     });
 
-    it('an unknown participant in a known workshop has 0 days attended and is PENDING', async () => {
+    it('an unknown participant in a known workshop has 0 days attended and FAILs', async () => {
       expect(await result('P-NEVER-SEEN')).toMatchObject({
-        result: 'PENDING',
-        attendance: { days_attended: 0 },
+        result: 'FAIL',
+        days_attended: 0,
+        final_score: null,
       });
     });
 
@@ -527,8 +531,8 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
       // now days 1 and 3 ⇒ attendance met, but score is still 45
       expect(await result('P-002')).toMatchObject({
         result: 'FAIL',
-        attendance: { days_attended: 2, met: true },
-        final_assessment: { met: false },
+        days_attended: 2,
+        final_score: 45,
       });
     });
   });

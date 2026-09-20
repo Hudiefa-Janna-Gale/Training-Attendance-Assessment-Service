@@ -14,30 +14,28 @@ export class AssessmentResponseDto {
   type: AssessmentType;
   @ApiProperty({ example: 100 }) total_marks: number;
   @ApiProperty({ example: 60 }) pass_mark: number;
-  @ApiProperty() created_at: string;
 }
 
+/** A score as stored: the assessment it belongs to, the participant, the mark and PASS/FAIL. */
 export class ScoreResponseDto {
   @ApiProperty({ example: 'ASS-001' }) assessment_id: string;
   @ApiProperty({ example: 'P-001' }) participant_id: string;
   @ApiProperty({ example: 82 }) score: number;
   @ApiProperty({ enum: AssessmentResult, example: AssessmentResult.PASS })
   result: AssessmentResult;
-  @ApiProperty() submitted_at: string;
 }
 
-export class ScoreSummaryDto {
-  @ApiProperty({ example: 3 }) total: number;
-  @ApiProperty({ example: 2 }) passed: number;
-  @ApiProperty({ example: 1 }) failed: number;
+/** One score inside an assessment (as in the brief's sample data). */
+export class ScoreItemDto {
+  @ApiProperty({ example: 'P-001' }) participant_id: string;
+  @ApiProperty({ example: 82 }) score: number;
+  @ApiProperty({ enum: AssessmentResult, example: AssessmentResult.PASS })
+  result: AssessmentResult;
 }
 
-export class ScoreListResponseDto {
-  @ApiProperty({ example: 'ASS-001' }) assessment_id: string;
-  @ApiProperty({ example: 100 }) total_marks: number;
-  @ApiProperty({ example: 60 }) pass_mark: number;
-  @ApiProperty({ type: ScoreSummaryDto }) summary: ScoreSummaryDto;
-  @ApiProperty({ type: [ScoreResponseDto] }) scores: ScoreResponseDto[];
+/** The assessment with all its scores, shaped like the brief's sample data. */
+export class ScoreListResponseDto extends AssessmentResponseDto {
+  @ApiProperty({ type: [ScoreItemDto] }) scores: ScoreItemDto[];
 }
 
 export function toAssessmentResponse(a: Assessment): AssessmentResponseDto {
@@ -49,7 +47,6 @@ export function toAssessmentResponse(a: Assessment): AssessmentResponseDto {
     type: a.type,
     total_marks: a.totalMarks,
     pass_mark: a.passMark,
-    created_at: a.createdAt.toISOString(),
   };
 }
 
@@ -59,6 +56,9 @@ export function toScoreResponse(s: Score): ScoreResponseDto {
     participant_id: s.participantId,
     score: s.score,
     result: s.result,
-    submitted_at: s.submittedAt.toISOString(),
   };
+}
+
+export function toScoreItem(s: Score): ScoreItemDto {
+  return { participant_id: s.participantId, score: s.score, result: s.result };
 }

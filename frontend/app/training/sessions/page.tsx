@@ -1,2 +1,70 @@
-import AppShell from "../../../components/training/AppShell";import StatusBadge from "../../../components/training/StatusBadge";
-export default function Sessions(){const rows=[["Workplace Safety Fundamentals","Safety Induction","18 Sep · 09:00","Today"],["Communication Skills","Professional Development","20 Sep · 13:00","Upcoming"],["Team Collaboration","Professional Development","23 Sep · 10:00","Upcoming"]];return <AppShell active="/training/sessions"><div className="content"><h1 className="page-title">Training sessions</h1><p className="sub">Schedule and manage every training session in one place.</p><div className="card page-card"><div className="card-head"><h2>All sessions</h2><button className="action">+ Create session</button></div><div className="toolbar"><div className="input">Search sessions…</div><div className="input">All workshops ▾</div></div><table className="table"><thead><tr><th>Session</th><th>Workshop</th><th>Date & time</th><th>Status</th></tr></thead><tbody>{rows.map(r=><tr key={r[0]}><td><strong>{r[0]}</strong></td><td>{r[1]}</td><td>{r[2]}</td><td><StatusBadge status={r[3]}/></td></tr>)}</tbody></table></div></div></AppShell>}
+import Link from "next/link";
+import LookupForm from "@/components/training/LookupForm";
+import PageHeader from "@/components/training/PageHeader";
+import SessionForm from "@/components/training/SessionForm";
+import { getSession } from "@/lib/api/sessions";
+import { formatDate } from "@/lib/format";
+import { firstParam } from "@/lib/params";
+
+export default async function SessionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session?: string | string[] }>;
+}) {
+  const sessionId = firstParam((await searchParams).session);
+  const session = sessionId ? await getSession(sessionId) : null;
+
+  return (
+    <div className="content">
+      <PageHeader
+        title="Training sessions"
+        subtitle="Create a session and assign its facilitator and topic."
+      />
+
+      <div className="card page-card">
+        <div className="card-head">
+          <h2>Create a session</h2>
+        </div>
+        <SessionForm />
+      </div>
+
+      <div className="card page-card">
+        <div className="card-head">
+          <h2>Find a session</h2>
+        </div>
+        <LookupForm
+          fields={[{ name: "session", label: "Session ID", placeholder: "SES-001", defaultValue: sessionId }]}
+          submitLabel="Find session"
+        />
+
+        {sessionId && !session && (
+          <p className="not-found" role="status">
+            There is no session <strong>{sessionId}</strong>.
+          </p>
+        )}
+
+        {session && (
+          <div className="detail">
+            <div className="card-head">
+              <h2>{session.session_id}</h2>
+              <Link
+                className="btn btn-ghost"
+                href={`/training/attendance?session=${encodeURIComponent(session.session_id)}`}
+              >
+                Attendance →
+              </Link>
+            </div>
+            <dl className="facts">
+              <div><dt>Workshop</dt><dd>{session.workshop_id}</dd></div>
+              <div><dt>Day</dt><dd>Day {session.day}</dd></div>
+              <div><dt>Date</dt><dd>{formatDate(session.date)}</dd></div>
+              <div><dt>Time</dt><dd>{session.time_slot}</dd></div>
+              <div><dt>Facilitator</dt><dd>{session.facilitator_id}</dd></div>
+              <div><dt>Topic</dt><dd>{session.topic_id}</dd></div>
+            </dl>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,3 +1,9 @@
+# Training, Attendance & Assessment Service — PostgreSQL + Prisma + NestJS API + Next.js web UI
+#
+#   docker compose up -d --build   # everything: database -> migrations -> API -> web
+#   docker compose up -d db        # database only (run the API / web on your machine)
+#
+# Values come from ./.env (see .env.example); every one has a working default.
 name: attendance-service
 
 x-db-url: &db-url postgresql://${POSTGRES_USER:-attendance}:${POSTGRES_PASSWORD:-attendance_dev_password}@db:5432/${POSTGRES_DB:-attendance_service}?schema=public
@@ -24,7 +30,7 @@ services:
   # One-shot job: applies pending Prisma migrations, then exits.
   migrate:
     build:
-      context: .
+      context: ./back-end
       target: build
     command: ['npx', 'prisma', 'migrate', 'deploy']
     environment:
@@ -36,7 +42,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ./back-end
       target: runtime
     restart: unless-stopped
     environment:
@@ -55,6 +61,26 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # Next.js UI. Its server talks to the API over the compose network; the browser only
+  # ever talks to this service.
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://api:4000
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/icon.svg').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pgdata:

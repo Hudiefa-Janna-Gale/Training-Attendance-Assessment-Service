@@ -47,21 +47,12 @@ describe('ResultsService', () => {
       finalAssessment: finalWith(82),
     });
 
-    await expect(service.getResult('P-001', 'WS-1')).resolves.toMatchObject({
+    await expect(service.getResult('P-001', 'WS-1')).resolves.toEqual({
+      participant_id: 'P-001',
+      workshop_id: 'WS-1',
       result: 'PASS',
-      attendance: {
-        days_attended: 3,
-        days_present: [1, 2, 3],
-        total_days: 3,
-        required_days: 2,
-        met: true,
-      },
-      final_assessment: {
-        assessment_id: 'ASS-001',
-        score: 82,
-        pass_mark: 60,
-        met: true,
-      },
+      days_attended: 3,
+      final_score: 82,
     });
   });
 
@@ -73,8 +64,8 @@ describe('ResultsService', () => {
 
     await expect(service.getResult('P-005', 'WS-1')).resolves.toMatchObject({
       result: 'FAIL',
-      attendance: { days_attended: 1, met: false },
-      final_assessment: { met: true },
+      days_attended: 1,
+      final_score: 90,
     });
   });
 
@@ -86,7 +77,7 @@ describe('ResultsService', () => {
 
     await expect(service.getResult('P-004', 'WS-1')).resolves.toMatchObject({
       result: 'FAIL',
-      final_assessment: { met: false },
+      days_attended: 3,
     });
   });
 
@@ -97,7 +88,7 @@ describe('ResultsService', () => {
     });
 
     const result = await service.getResult('P-007', 'WS-1');
-    expect(result.attendance.days_attended).toBe(1);
+    expect(result.days_attended).toBe(1);
     expect(result.result).toBe('FAIL');
   });
 
@@ -120,19 +111,20 @@ describe('ResultsService', () => {
     );
   });
 
-  it('PENDING: attended but the final score has not been recorded yet', async () => {
+  it('FAIL with a null final_score when the participant has no final score ("otherwise FAIL")', async () => {
     const { service } = serviceWith({
       presentDays: [1, 2, 3],
       finalAssessment: finalWith(),
     });
 
     await expect(service.getResult('P-006', 'WS-1')).resolves.toMatchObject({
-      result: 'PENDING',
-      final_assessment: { score: null, met: null },
+      result: 'FAIL',
+      days_attended: 3,
+      final_score: null,
     });
   });
 
-  it('PENDING with final_assessment null when the workshop has sessions but no final yet', async () => {
+  it('FAIL when the workshop has sessions but no final assessment yet', async () => {
     const { service } = serviceWith({
       presentDays: [1],
       sessionCount: 2,
@@ -140,8 +132,8 @@ describe('ResultsService', () => {
     });
 
     await expect(service.getResult('P-001', 'WS-1')).resolves.toMatchObject({
-      result: 'PENDING',
-      final_assessment: null,
+      result: 'FAIL',
+      final_score: null,
     });
   });
 

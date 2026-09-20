@@ -10,7 +10,6 @@ export class SessionResponseDto {
   @ApiProperty({ example: 'FAC-001' }) facilitator_id: string;
   @ApiProperty({ example: 'TOP-001' }) topic_id: string;
   @ApiProperty({ example: '08:00–09:30' }) time_slot: string;
-  @ApiProperty() created_at: string;
 }
 
 export function toSessionResponse(s: Session): SessionResponseDto {
@@ -22,6 +21,5 @@ export function toSessionResponse(s: Session): SessionResponseDto {
     facilitator_id: s.facilitatorId,
     topic_id: s.topicId,
     time_slot: s.timeSlot,
-    created_at: s.createdAt.toISOString(),
   };
 }
