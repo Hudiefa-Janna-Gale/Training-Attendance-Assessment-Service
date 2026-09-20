@@ -1,0 +1,104 @@
+// prisma/schema.prisma
+// SD-Group 6 — Training, Attendance & Assessment Service
+//
+// Ported from the MongoDB schema in the service brief to PostgreSQL.
+// Business keys (sessionId, assessmentId, ...) are kept as the cross-service
+// identifiers; workshopId / facilitatorId / topicId / participantId belong to
+// other services (Groups 1, 2, 4, 5) and are therefore plain strings, not FKs.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  excused
+}
+
+enum AssessmentResult {
+  PASS
+  FAIL
+}
+
+// A workshop has exactly one FINAL assessment (Day 3) and any number of
+// optional daily QUIZ assessments.
+enum AssessmentType {
+  FINAL
+  QUIZ
+}
+
+model Session {
+  id            String   @id @default(uuid()) @db.Uuid
+  sessionId     String   @unique @map("session_id") // e.g. "SES-001"
+  workshopId    String   @map("workshop_id") // FK → Workshop.workshopId (Group 1)
+  facilitatorId String   @map("facilitator_id") // FK → Facilitator.facilitatorId (Group 4)
+  topicId       String   @map("topic_id") // FK → Topic.topicId (Group 5)
+  day           Int // 1, 2, or 3 (CHECK constraint in migration)
+  date          DateTime @db.Date
+  timeSlot      String   @map("time_slot") // e.g. "08:00–09:30"
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  attendance AttendanceRecord[]
+
+  // The same workshop cannot have two sessions in the same day + time slot.
+  @@unique([workshopId, day, timeSlot])
+  @@index([workshopId])
+  @@map("sessions")
+}
+
+model AttendanceRecord {
+  id            String           @id @default(uuid()) @db.Uuid
+  sessionId     String           @map("session_id") // FK → Session.sessionId
+  participantId String           @map("participant_id") // FK → Participant.participantId (Group 2)
+  status        AttendanceStatus @default(absent)
+  recordedAt    DateTime         @default(now()) @map("recorded_at")
+
+  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+
+  // One record per participant per session.
+  @@unique([sessionId, participantId])
+  @@index([participantId])
+  @@map("attendance_records")
+}
+
+model Assessment {
+  id           String         @id @default(uuid()) @db.Uuid
+  assessmentId String         @unique @map("assessment_id") // e.g. "ASS-001"
+  workshopId   String         @map("workshop_id") // FK → Workshop.workshopId (Group 1)
+  title        String
+  day          Int // 1, 2, or 3 — the final assessment is on day 3
+  type         AssessmentType @default(FINAL)
+  totalMarks   Int            @default(100) @map("total_marks")
+  passMark     Int            @default(60) @map("pass_mark")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  scores Score[]
+
+  // "One FINAL assessment per workshop" is a partial unique index, added by
+  // hand in the init migration (Prisma cannot express partial indexes).
+  @@index([workshopId])
+  @@map("assessments")
+}
+
+model Score {
+  id            String           @id @default(uuid()) @db.Uuid
+  assessmentId  String           @map("assessment_id") // FK → Assessment.assessmentId
+  participantId String           @map("participant_id") // FK → Participant.participantId (Group 2)
+  score         Int
+  result        AssessmentResult // computed: score >= passMark → PASS
+  submittedAt   DateTime         @default(now()) @map("submitted_at")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [assessmentId], onDelete: Cascade)
+
+  // One score per participant per assessment.
+  @@unique([assessmentId, participantId])
+  @@index([participantId])
+  @@map("scores")
+}

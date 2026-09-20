@@ -1,114 +1,170 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Training, Attendance & Assessment Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+**SD-Group 6 · Software Development Track 3**
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Runs the day-to-day of each workshop: training sessions, daily attendance, assessments and
+scores, and the final **PASS / FAIL** result that the Feedback, Certificate & Notification
+Service consumes.
 
-## Description
+**Stack:** NestJS 12 · Prisma 7 · PostgreSQL 17 · Docker Compose · Vitest
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Quick start
 
 ```bash
-$ npm install
+cp .env.example .env          # defaults work as-is
+docker compose up -d --build  # PostgreSQL + migrations + API
+docker compose run --rm migrate npx prisma db seed   # optional demo data
 ```
 
-## Compile and run the project
+- API: <http://localhost:4000> · Swagger UI: <http://localhost:4000/docs> · Health: <http://localhost:4000/health>
+- Stop: `docker compose down` (add `-v` to also delete the database volume)
+
+Try it — the seed data contains P-001 … P-006 for workshop `WS-2025-001`:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+curl localhost:4000/participants/P-001/results/WS-2025-001
 ```
 
-## Run tests
+### Developing on your machine (hot reload)
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose up -d db       # just PostgreSQL, on localhost:5435
+npm install                   # also runs `prisma generate`
+npm run db:migrate            # apply migrations (creates new ones when the schema changes)
+npm run db:seed               # optional demo data
+npm run start:dev             # API with watch mode
 ```
 
-## Deployment
+## API
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Field names are `snake_case` exactly like the brief's sample data. `:id` in a path is the
+business id (`SES-001`, `ASS-001`, `P-001`), not a database id.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| POST | `/sessions` | Create a training session (assigns facilitator + topic) |
+| GET | `/sessions/:id` | Get session details |
+| POST | `/sessions/:id/attendance` | Record attendance for a session |
+| GET | `/sessions/:id/attendance` | Get the attendance list (with present/absent/excused counts) |
+| POST | `/assessments` | Create an assessment (final or optional daily quiz) |
+| POST | `/assessments/:id/scores` | Submit a participant's score |
+| GET | `/assessments/:id/scores` | Get all scores for an assessment |
+| GET | `/participants/:id/results/:workshop_id` | Final PASS / FAIL result |
+| GET | `/health` | Liveness + database check |
+
+Error shape (NestJS default): `{ "statusCode": 409, "message": "…", "error": "Conflict" }`.
+`400` validation · `404` unknown session / assessment / workshop · `409` duplicates.
+
+### Example flow
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# 1. a session (session_id is optional: omitted → SES-001, SES-002, …)
+curl -X POST localhost:4000/sessions -H 'content-type: application/json' -d '{
+  "workshop_id": "WS-2025-001", "day": 1, "date": "2025-09-01",
+  "facilitator_id": "FAC-001", "topic_id": "TOP-001", "time_slot": "08:00–09:30" }'
+
+# 2. attendance (re-sending a participant corrects their status)
+curl -X POST localhost:4000/sessions/SES-001/attendance -H 'content-type: application/json' -d '{
+  "records": [ {"participant_id":"P-001","status":"present"}, {"participant_id":"P-002","status":"absent"} ] }'
+
+# 3. the final assessment and a score (PASS/FAIL of the score is computed by the service)
+curl -X POST localhost:4000/assessments -H 'content-type: application/json' -d '{
+  "workshop_id": "WS-2025-001", "title": "Day 3 Final Assessment", "day": 3 }'
+curl -X POST localhost:4000/assessments/ASS-001/scores -H 'content-type: application/json' -d '{
+  "participant_id": "P-001", "score": 82 }'
+
+# 4. the workshop result
+curl localhost:4000/participants/P-001/results/WS-2025-001
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### PASS / FAIL logic
 
-## Observability
+A participant **PASSES** the workshop if they attended **at least 2 of the 3 days** AND scored
+**at or above the pass mark** (60 out of 100 by default) on the final assessment. Otherwise **FAIL**.
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+The result response shows how it was decided:
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+```jsonc
+{
+  "participant_id": "P-001", "workshop_id": "WS-2025-001",
+  "result": "PASS",                      // PASS | FAIL | PENDING
+  "attendance": { "days_attended": 3, "days_present": [1, 2, 3], "total_days": 3, "required_days": 2, "met": true },
+  "final_assessment": { "assessment_id": "ASS-001", "score": 82, "total_marks": 100, "pass_mark": 60, "met": true },
+  "calculated_at": "2026-09-20T14:02:08.691Z"
+}
+```
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+Decisions where the brief left room (all in `src/results/grading.ts`, one place to change):
 
-## Resources
+- **Only `present` counts as attended.** `excused` is an approved absence, not attendance.
+- **A day counts once**, even if the participant was present in several sessions that day.
+- **`PENDING`** is returned while no final score has been recorded, instead of a premature `FAIL`, so the
+  certificate service can tell "not marked yet" from "failed". Change one line in `evaluateWorkshopResult`
+  if you prefer a strict `FAIL`.
+- The pass mark comes from the assessment (`pass_mark`, configurable), not a hard-coded 60.
 
-Check out a few resources that may come in handy when working with NestJS:
+### Other rules enforced
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- One attendance record per participant per session; one score per participant per assessment.
+- A workshop has **exactly one FINAL assessment, on day 3**; it can also have any number of `QUIZ` assessments.
+  If `type` is omitted it defaults to `FINAL` on day 3 and `QUIZ` otherwise.
+- `0 ≤ score ≤ total_marks` and `pass_mark ≤ total_marks`. Clients cannot set a score's `result`; it is computed.
+- A workshop cannot have two sessions in the same day and time slot. `time_slot` is normalised to `08:00–09:30`.
+- `workshop_id`, `facilitator_id`, `topic_id`, `participant_id` belong to other services, so they are plain
+  strings validated for shape only (no cross-service lookups).
 
-## Support
+## Database (PostgreSQL + Prisma)
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Ported from the MongoDB schema in the brief. Models: `Session`, `AttendanceRecord`, `Assessment`, `Score`
+(`prisma/schema.prisma`). Tables are snake_case; foreign keys use the business ids (`session_id`,
+`assessment_id`) as in the brief. The init migration also contains hand-written SQL Prisma cannot express:
+`CHECK` constraints (day 1–3, sane marks, FINAL on day 3), a partial unique index (one FINAL per workshop),
+and the sequences behind generated `SES-nnn` / `ASS-nnn` ids.
 
-## Stay in touch
+| Script | What it does |
+| ------ | ------------ |
+| `npm run db:migrate` | `prisma migrate dev` — apply/create migrations (development) |
+| `npm run db:deploy` | `prisma migrate deploy` — apply migrations (CI / production) |
+| `npm run db:seed` | Demo data (idempotent) |
+| `npm run db:studio` | Prisma Studio |
+| `npm run db:reset` | Drop and recreate the dev database |
+| `npm run db:generate` | Regenerate the Prisma client into `src/generated/prisma` (git-ignored) |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+**Docker Compose services:** `db` (postgres:17-alpine, healthcheck, named volume) → `migrate` (one-shot
+`prisma migrate deploy`) → `api` (waits for migrations, non-root, healthcheck on `/health`).
+Host ports come from `.env`; the database defaults to **5435** because 5432–5434 are often taken.
 
-## License
+## Tests
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+npm test          # unit tests, no database needed
+docker compose up -d db && npm run db:deploy
+npm run test:e2e  # end-to-end against the real PostgreSQL
+npm run lint
+```
+
+The e2e suite creates a throw-away workshop and deletes it afterwards, so it is safe to run against your
+development database.
+
+## Configuration
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `DATABASE_URL` | — (required) | PostgreSQL connection string (Docker sets its own for the `api` container) |
+| `PORT` | `4000` | 3000 is left free for the Next.js frontend |
+| `CORS_ORIGIN` | `http://localhost:3000` | Comma-separated list of allowed browser origins |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | see `.env.example` | Used by the `db` container |
+
+## Project layout
+
+```
+prisma/               schema, migrations, seed
+src/
+  sessions/           POST/GET /sessions
+  attendance/         /sessions/:id/attendance
+  assessments/        /assessments and /assessments/:id/scores
+  results/            /participants/:id/results/:workshop_id  +  grading.ts (PASS/FAIL rules)
+  prisma/             PrismaService, id generator, DB-error → HTTP filter
+  common/ config/ health/
+test/                 e2e tests
+```

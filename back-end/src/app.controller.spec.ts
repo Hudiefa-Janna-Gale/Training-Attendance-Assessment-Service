@@ -15,8 +15,13 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('describes the service and where to find docs and health', () => {
+      expect(appController.getInfo()).toEqual({
+        service: 'Training, Attendance & Assessment Service',
+        group: 'SD-Group 6',
+        docs: '/docs',
+        health: '/health',
+      });
     });
   });
 });
