@@ -1,0 +1,1 @@
+export type AttendanceStatus="present"|"absent"|"excused";export type AssessmentResult="PASS"|"FAIL";export interface TrainingSession{sessionId:string;workshopId:string;facilitatorId:string;topicId:string;day:number;date:string;timeSlot:string}
