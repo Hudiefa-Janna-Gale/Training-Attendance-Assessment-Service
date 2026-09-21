@@ -18,7 +18,7 @@ export default async function AssessmentsPage({
     <div className="content">
       <PageHeader
         title="Assessments"
-        subtitle="Create the final assessment or a daily quiz, and submit participant scores."
+        subtitle="Create assessments, manage participant scores, and track results."
       />
 
       <div className="card page-card">
