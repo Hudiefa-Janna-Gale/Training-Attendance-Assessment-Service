@@ -14,6 +14,8 @@ import { PrismaService } from './../src/prisma/prisma.service.js';
 const RUN = Date.now().toString(36).toUpperCase();
 const WS = `WS-E2E-${RUN}`; // main workshop
 const WS_EMPTY = `WS-E2E-EMPTY-${RUN}`;
+const WS_LONG = `WS-E2E-LONG-${RUN}`; // runs more than 3 days
+const WS_SHORT = `WS-E2E-SHORT-${RUN}`; // runs a single day
 const sid = (n: number) => `SES-E2E-${RUN}-${n}`;
 const aid = (n: number) => `ASS-E2E-${RUN}-${n}`;
 
@@ -34,29 +36,30 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
   afterAll(async () => {
     // Attendance and scores go with their sessions / assessments (ON DELETE CASCADE).
     await prisma.session.deleteMany({
-      where: { workshopId: { in: [WS, WS_EMPTY] } },
+      where: { workshopId: { in: [WS, WS_EMPTY, WS_LONG, WS_SHORT] } },
     });
     await prisma.assessment.deleteMany({
-      where: { workshopId: { in: [WS, WS_EMPTY] } },
+      where: { workshopId: { in: [WS, WS_EMPTY, WS_LONG, WS_SHORT] } },
     });
     await app.close();
   });
 
   describe('service', () => {
-    it("exposes nothing beyond the brief's endpoints (no root page, no list or workshop routes)", async () => {
+    it('exposes nothing else: no root page, no workshop routes, no GET /assessments/:id', async () => {
       for (const route of [
         '/',
-        '/sessions',
-        '/assessments',
         '/workshops',
         '/workshops/WS-1/results',
+        '/assessments/ASS-1',
       ]) {
         await http().get(route).expect(404);
       }
     });
 
-    it('GET /health reports the database as up', async () => {
-      await http().get('/health').expect(200, { status: 'ok', database: 'up' });
+    it('GET /health reports the database as up (and no broker: this app is HTTP only)', async () => {
+      await http()
+        .get('/health')
+        .expect(200, { status: 'ok', database: 'up', rabbitmq: 'off' });
     });
   });
 
@@ -126,7 +129,7 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
 
     it.each([
       ['day 0', { day: 0 }],
-      ['day 4', { day: 4 }],
+      ['day 31', { day: 31 }],
       ['non-integer day', { day: 1.5 }],
       ['day as a string', { day: '1' }],
       ['impossible date', { date: '2025-02-30' }],
@@ -534,6 +537,209 @@ describe('Training, Attendance & Assessment Service (e2e)', () => {
         days_attended: 2,
         final_score: 45,
       });
+    });
+  });
+
+  describe('a longer workshop (more than 3 days)', () => {
+    const session = (day: number, id: string) =>
+      http().post('/sessions').send({
+        session_id: id,
+        workshop_id: WS_LONG,
+        day,
+        date: '2025-10-01',
+        facilitator_id: 'FAC-001',
+        topic_id: 'TOP-001',
+        time_slot: '08:00–09:30',
+      });
+
+    it('accepts sessions on the later days, up to day 30, and rejects day 31', async () => {
+      for (const day of [2, 4, 5, 30]) {
+        const res = await session(day, sid(200 + day)).expect(201);
+        expect(res.body.day).toBe(day);
+      }
+      await session(31, sid(231)).expect(400);
+    });
+
+    it('accepts a quiz on a later day, keeps the FINAL on day 3, and rejects day 31', async () => {
+      const quiz = await http()
+        .post('/assessments')
+        .send({ workshop_id: WS_LONG, title: 'Day 5 quiz', day: 5 })
+        .expect(201);
+      expect(quiz.body).toMatchObject({ day: 5, type: 'QUIZ' });
+
+      await http()
+        .post('/assessments')
+        .send({
+          workshop_id: WS_LONG,
+          title: 'Late final',
+          day: 5,
+          type: 'FINAL',
+        })
+        .expect(400);
+      await http()
+        .post('/assessments')
+        .send({ workshop_id: WS_LONG, title: 'Too late', day: 31 })
+        .expect(400);
+    });
+
+    it('still needs 2 attended days and the final’s pass mark, whichever days they are', async () => {
+      await http()
+        .post('/assessments')
+        .send({
+          assessment_id: aid(200),
+          workshop_id: WS_LONG,
+          title: 'Day 3 Final Assessment',
+          day: 3,
+        })
+        .expect(201);
+
+      const present = (sessionId: string, participant_id: string) =>
+        http()
+          .post(`/sessions/${sessionId}/attendance`)
+          .send({ records: [{ participant_id, status: 'present' }] })
+          .expect(201);
+      // P-LONG-A: days 2 and 5 ⇒ 2 days attended; P-LONG-B: day 5 only ⇒ 1 day
+      await present(sid(202), 'P-LONG-A');
+      await present(sid(205), 'P-LONG-A');
+      await present(sid(205), 'P-LONG-B');
+      for (const participant_id of ['P-LONG-A', 'P-LONG-B']) {
+        await http()
+          .post(`/assessments/${aid(200)}/scores`)
+          .send({ participant_id, score: 60 })
+          .expect(201);
+      }
+
+      const result = (participant: string) =>
+        http()
+          .get(`/participants/${participant}/results/${WS_LONG}`)
+          .expect(200)
+          .then((r) => r.body);
+      expect(await result('P-LONG-A')).toEqual({
+        participant_id: 'P-LONG-A',
+        workshop_id: WS_LONG,
+        result: 'PASS',
+        days_attended: 2,
+        final_score: 60,
+      });
+      expect(await result('P-LONG-B')).toMatchObject({
+        result: 'FAIL',
+        days_attended: 1,
+      });
+    });
+  });
+
+  describe('a one-day workshop', () => {
+    it('needs that one day: attending it and scoring at the pass mark is a PASS', async () => {
+      await http()
+        .post('/sessions')
+        .send({
+          session_id: sid(300),
+          workshop_id: WS_SHORT,
+          day: 1,
+          date: '2025-11-01',
+          facilitator_id: 'FAC-001',
+          topic_id: 'TOP-001',
+          time_slot: '08:00–09:30',
+        })
+        .expect(201);
+      await http()
+        .post('/assessments')
+        .send({
+          assessment_id: aid(300),
+          workshop_id: WS_SHORT,
+          title: 'Final',
+          day: 3,
+        })
+        .expect(201);
+      await http()
+        .post(`/sessions/${sid(300)}/attendance`)
+        .send({
+          records: [
+            { participant_id: 'P-SHORT-A', status: 'present' },
+            { participant_id: 'P-SHORT-B', status: 'absent' },
+          ],
+        })
+        .expect(201);
+      for (const participant_id of ['P-SHORT-A', 'P-SHORT-B']) {
+        await http()
+          .post(`/assessments/${aid(300)}/scores`)
+          .send({ participant_id, score: 60 })
+          .expect(201);
+      }
+
+      const result = (participant: string) =>
+        http()
+          .get(`/participants/${participant}/results/${WS_SHORT}`)
+          .expect(200)
+          .then((r) => r.body);
+      expect(await result('P-SHORT-A')).toEqual({
+        participant_id: 'P-SHORT-A',
+        workshop_id: WS_SHORT,
+        result: 'PASS',
+        days_attended: 1,
+        final_score: 60,
+      });
+      expect(await result('P-SHORT-B')).toMatchObject({
+        result: 'FAIL',
+        days_attended: 0,
+      });
+    });
+  });
+
+  describe('list endpoints (so created records can be shown)', () => {
+    it('GET /sessions lists sessions newest first, in the same shape as GET /sessions/:id', async () => {
+      const list = await http().get('/sessions').expect(200);
+
+      const mine = list.body.filter((x: any) => x.workshop_id === WS);
+      expect(mine.length).toBeGreaterThanOrEqual(5);
+
+      // newest first: the last session created in the suite (sid(3)) is listed before the first (sid(1))
+      const ids = list.body.map((x: any) => x.session_id);
+      expect(ids.indexOf(sid(3))).toBeLessThan(ids.indexOf(sid(1)));
+
+      const one = await http()
+        .get(`/sessions/${sid(1)}`)
+        .expect(200);
+      expect(list.body.find((x: any) => x.session_id === sid(1))).toEqual(
+        one.body,
+      );
+    });
+
+    it("GET /assessments lists assessments newest first with the brief's fields", async () => {
+      const list = await http().get('/assessments').expect(200);
+
+      const mine = list.body.filter((x: any) => x.workshop_id === WS);
+      expect(mine.map((x: any) => x.assessment_id)).toContain(aid(1));
+      expect(list.body.find((x: any) => x.assessment_id === aid(1))).toEqual({
+        assessment_id: aid(1),
+        workshop_id: WS,
+        title: 'Day 3 Final Assessment',
+        day: 3,
+        type: 'FINAL',
+        total_marks: 100,
+        pass_mark: 60,
+      });
+
+      // the quiz created after the final is listed first
+      const ids = mine.map((x: any) => x.assessment_id);
+      expect(ids.indexOf(aid(1))).toBeGreaterThan(0);
+    });
+
+    it('a session created now appears at the top of GET /sessions straight away', async () => {
+      const created = await http()
+        .post('/sessions')
+        .send({
+          workshop_id: WS,
+          day: 3,
+          date: '2025-09-03',
+          facilitator_id: 'FAC-003',
+          topic_id: 'TOP-005',
+          time_slot: '15:00–16:00',
+        })
+        .expect(201);
+
+      const list = await http().get('/sessions').expect(200);
+      expect(list.body[0]).toEqual(created.body);
     });
   });
 });

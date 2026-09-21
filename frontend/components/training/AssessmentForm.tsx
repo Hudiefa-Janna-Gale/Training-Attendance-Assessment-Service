@@ -3,58 +3,73 @@
 import { useActionState } from "react";
 import { createAssessmentAction } from "@/app/training/assessments/actions";
 import type { ActionState } from "@/lib/action-state";
+import { DAY_PATTERN, DAY_RULE, suggestDay, type Option } from "@/lib/catalog";
+import { ID_RULE } from "@/lib/roster";
+import Combobox from "./Combobox";
 import { Field, FormAlert, SubmitButton } from "./FormControls";
 
 const ID_PATTERN = "[A-Za-z0-9_\\-]{1,64}";
 const initial: ActionState = { status: "idle" };
 
 /** Creates the workshop's final assessment (day 3) or an optional daily quiz. */
-export default function AssessmentForm() {
+export default function AssessmentForm({ workshops, days }: { workshops: Option[]; days: Option[] }) {
   const [state, action] = useActionState(createAssessmentAction, initial);
   const typed = state.status === "error" ? state.values : undefined;
 
   return (
-    <form action={action} className="form">
-      <div className="form-grid">
-        <Field label="Workshop ID" hint="From the Workshop service">
-          <input
-            className="input"
-            name="workshop_id"
-            required
-            pattern={ID_PATTERN}
-            defaultValue={typed?.workshop_id}
-            placeholder="WS-2025-001"
-          />
-        </Field>
+    <form action={action} className="form-stack">
+      <Combobox
+        name="workshop_id"
+        label="Workshop"
+        hint="Pick a workshop, or type a new one."
+        options={workshops}
+        emptyHint="No workshops yet. Type the ID of the first one."
+        noun="workshop"
+        required
+        pattern={ID_PATTERN}
+        patternHint={ID_RULE}
+        defaultValue={typed?.workshop_id}
+        placeholder="Choose or type, like WS-2025-001"
+      />
 
-        <Field label="Title" className="span-2">
-          <input
-            className="input"
-            name="title"
-            required
-            maxLength={200}
-            defaultValue={typed?.title}
-            placeholder="Day 3 Final Assessment"
-          />
-        </Field>
+      <Field label="Title">
+        <input
+          className="input"
+          name="title"
+          required
+          maxLength={200}
+          defaultValue={typed?.title}
+          placeholder="Day 3 Final Assessment"
+        />
+      </Field>
 
-        <Field label="Day">
-          <select className="input" name="day" required defaultValue={typed?.day ?? "3"}>
-            <option value="1">Day 1</option>
-            <option value="2">Day 2</option>
-            <option value="3">Day 3</option>
-          </select>
-        </Field>
-
-        <Field label="Kind" hint="A workshop has one final, on day 3">
+      <div className="pair">
+        <Combobox
+          name="day"
+          label="Day"
+          options={days}
+          noun="day"
+          required
+          pattern={DAY_PATTERN}
+          patternHint={DAY_RULE}
+          suggest={suggestDay}
+          defaultValue={typed?.day ?? "3"}
+          placeholder="Choose or type, like 4"
+        />
+        <Field label="Kind">
           <select className="input" name="type" defaultValue={typed?.type ?? ""}>
-            <option value="">Automatic (final on day 3, otherwise quiz)</option>
+            <option value="">Automatic</option>
             <option value="FINAL">Final assessment</option>
             <option value="QUIZ">Daily quiz</option>
           </select>
         </Field>
+      </div>
+      <p className="muted note">
+        Automatic makes it the final on day 3 and a quiz on any other day. A workshop has one final, and it is on day 3.
+      </p>
 
-        <Field label="Total marks" hint="Default 100">
+      <div className="pair">
+        <Field label="Total marks" hint="100 if left empty.">
           <input
             className="input"
             type="number"
@@ -65,8 +80,7 @@ export default function AssessmentForm() {
             placeholder="100"
           />
         </Field>
-
-        <Field label="Pass mark" hint="Default 60">
+        <Field label="Pass mark" hint="60 if left empty.">
           <input
             className="input"
             type="number"
@@ -77,20 +91,20 @@ export default function AssessmentForm() {
             placeholder="60"
           />
         </Field>
-
-        <Field label="Assessment ID (optional)" hint="Leave blank to generate ASS-001, …">
-          <input
-            className="input"
-            name="assessment_id"
-            pattern={ID_PATTERN}
-            defaultValue={typed?.assessment_id}
-            placeholder="auto"
-          />
-        </Field>
       </div>
 
+      <Field label="Assessment ID (optional)" hint="Leave it empty and one is generated, like ASS-011.">
+        <input
+          className="input"
+          name="assessment_id"
+          pattern={ID_PATTERN}
+          defaultValue={typed?.assessment_id}
+          placeholder="Generated for you"
+        />
+      </Field>
+
       <FormAlert state={state} />
-      <div className="actions">
+      <div className="form-actions">
         <SubmitButton pendingLabel="Creating…">Create assessment</SubmitButton>
       </div>
     </form>

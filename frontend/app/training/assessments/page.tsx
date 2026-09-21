@@ -1,105 +1,121 @@
+import { Suspense } from "react";
 import AssessmentForm from "@/components/training/AssessmentForm";
-import LookupForm from "@/components/training/LookupForm";
-import PageHeader from "@/components/training/PageHeader";
+import AssessmentsTable from "@/components/training/AssessmentsTable";
+import CreateDrawer from "@/components/training/CreateDrawer";
+import Page from "@/components/training/Page";
 import ScoreForm from "@/components/training/ScoreForm";
+import ScoresTable from "@/components/training/ScoresTable";
+import { FormSkeleton, SheetSkeleton } from "@/components/training/Skeletons";
 import StatusBadge from "@/components/training/StatusBadge";
-import { getScores } from "@/lib/api/assessments";
+import { getScores, listAssessments } from "@/lib/api/assessments";
+import { listSessions } from "@/lib/api/sessions";
+import { dayOptions, workshopOptions } from "@/lib/catalog";
+import { loadWorkshopParticipants } from "@/lib/directory";
 import { firstParam } from "@/lib/params";
 
-export default async function AssessmentsPage({
+/**
+ * The title bar and the "New assessment" button are static (prerendered once). Only what comes from
+ * the Training service is fetched per request: the form's pick-lists, the chosen assessment and the list.
+ */
+export default function AssessmentsPage({
   searchParams,
 }: {
   searchParams: Promise<{ assessment?: string | string[] }>;
 }) {
+  return (
+    <Page
+      title="Assessments"
+      subtitle="Create assessments and record each participant’s score."
+      actions={
+        <CreateDrawer
+          label="New assessment"
+          title="New assessment"
+          description="The final assessment on day 3, or a quiz on any day."
+        >
+          <Suspense fallback={<FormSkeleton />}>
+            <NewAssessmentForm />
+          </Suspense>
+        </CreateDrawer>
+      }
+    >
+      <Suspense fallback={<SheetSkeleton />}>
+        <AssessmentsData searchParams={searchParams} />
+      </Suspense>
+    </Page>
+  );
+}
+
+async function NewAssessmentForm() {
+  const [sessions, assessments] = await Promise.all([listSessions(), listAssessments()]);
+  return <AssessmentForm workshops={workshopOptions(sessions, assessments)} days={dayOptions(sessions, assessments)} />;
+}
+
+async function AssessmentsData({ searchParams }: { searchParams: Promise<{ assessment?: string | string[] }> }) {
   const assessmentId = firstParam((await searchParams).assessment);
-  const assessment = assessmentId ? await getScores(assessmentId) : null;
+  const [assessments, sessions, assessment] = await Promise.all([
+    listAssessments(),
+    listSessions(),
+    assessmentId ? getScores(assessmentId) : null,
+  ]);
+
+  // Offer the workshop's participants who still have no score, so nobody retypes ids.
+  const scored = new Set(assessment?.scores.map((s) => s.participant_id));
+  const unscored = assessment
+    ? (await loadWorkshopParticipants(assessment.workshop_id, sessions, assessments)).filter((p) => !scored.has(p))
+    : [];
 
   return (
-    <div className="content">
-      <PageHeader
-        title="Assessments"
-        subtitle="Create the final assessment or a daily quiz, and submit participant scores."
-      />
-
-      <div className="card page-card">
-        <div className="card-head">
-          <h2>Create an assessment</h2>
-        </div>
-        <AssessmentForm />
-      </div>
-
-      <div className="card page-card">
-        <div className="card-head">
-          <h2>Scores</h2>
-        </div>
-        <LookupForm
-          fields={[
-            { name: "assessment", label: "Assessment ID", placeholder: "ASS-001", defaultValue: assessmentId },
-          ]}
-          submitLabel="Open assessment"
-        />
-
-        {!assessmentId && (
-          <p className="sub spaced-top">Enter an assessment ID to see and submit its scores.</p>
-        )}
-
-        {assessmentId && !assessment && (
-          <p className="not-found" role="status">
+    <>
+      {assessmentId && !assessment && (
+        <section className="sheet">
+          <p className="notice" role="status">
             There is no assessment <strong>{assessmentId}</strong>.
           </p>
-        )}
+        </section>
+      )}
 
-        {assessment && (
-          <div className="detail">
-            <div className="card-head">
-              <h2>{assessment.title}</h2>
-              <StatusBadge status={assessment.type} label={assessment.type === "FINAL" ? "Final" : "Quiz"} />
-            </div>
-            <p className="sub spaced">
-              {assessment.assessment_id} · {assessment.workshop_id} · Day {assessment.day} · Pass mark:{" "}
-              {assessment.pass_mark} / {assessment.total_marks}
-            </p>
-
-            {assessment.scores.length === 0 ? (
-              <p className="sub">No scores yet.</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Participant ID</th>
-                      <th scope="col">Score</th>
-                      <th scope="col">Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assessment.scores.map((s) => (
-                      <tr key={s.participant_id}>
-                        <td>
-                          <strong>{s.participant_id}</strong>
-                        </td>
-                        <td>
-                          {s.score} / {assessment.total_marks}
-                        </td>
-                        <td>
-                          <StatusBadge status={s.result} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <h3 className="subhead">Submit a score</h3>
-            <ScoreForm
-              key={assessment.assessment_id}
-              assessmentId={assessment.assessment_id}
-              totalMarks={assessment.total_marks}
-            />
+      {/* The one being worked on comes first, so opening it never means scrolling past the list. */}
+      {assessment && (
+        <section className="sheet">
+          <div className="sheet-head">
+            <h2 className="sheet-title">{assessment.title}</h2>
+            <StatusBadge status={assessment.type} />
           </div>
-        )}
-      </div>
-    </div>
+          <div className="sheet-body">
+            <dl className="facts">
+              <div>
+                <dt>Assessment</dt>
+                <dd>{assessment.assessment_id}</dd>
+              </div>
+              <div>
+                <dt>Workshop</dt>
+                <dd>{assessment.workshop_id}</dd>
+              </div>
+              <div>
+                <dt>Day</dt>
+                <dd>Day {assessment.day}</dd>
+              </div>
+              <div>
+                <dt>Pass mark</dt>
+                <dd>
+                  {assessment.pass_mark} of {assessment.total_marks}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <ScoreForm
+            key={assessment.assessment_id}
+            assessmentId={assessment.assessment_id}
+            totalMarks={assessment.total_marks}
+            participants={unscored.map((value) => ({ value, description: "No score yet" }))}
+          />
+
+          <ScoresTable key={assessment.assessment_id} assessment={assessment} />
+        </section>
+      )}
+
+      <AssessmentsTable assessments={assessments} selectedId={assessmentId} />
+    </>
   );
 }

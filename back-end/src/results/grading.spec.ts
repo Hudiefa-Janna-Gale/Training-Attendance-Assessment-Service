@@ -1,6 +1,7 @@
 import {
   evaluateWorkshopResult,
   REQUIRED_DAYS,
+  requiredDays,
   scoreResult,
 } from './grading.js';
 
@@ -52,6 +53,47 @@ describe('evaluateWorkshopResult (the brief: >= 2 of 3 days AND final score >= 6
     expect(
       evaluateWorkshopResult({ daysAttended: 3, finalScore: null, passMark }),
     ).toBe('FAIL');
+  });
+
+  describe('a workshop with fewer than 3 days', () => {
+    it.each([
+      // workshopDays → days that must be attended
+      [0, 1], // no session at all: still asks for 1, which nobody can meet
+      [1, 1],
+      [2, 2],
+      [3, 2], // the brief's workshop
+      [5, 2], // a longer workshop still needs 2
+      [30, 2],
+    ])('a %i-day workshop needs %i day(s)', (workshopDays, needed) => {
+      expect(requiredDays(workshopDays)).toBe(needed);
+    });
+
+    it('a one-day workshop is passed by attending that day and scoring at the pass mark', () => {
+      const input = { finalScore: 60, passMark, workshopDays: 1 };
+      expect(evaluateWorkshopResult({ ...input, daysAttended: 1 })).toBe(
+        'PASS',
+      );
+      expect(evaluateWorkshopResult({ ...input, daysAttended: 0 })).toBe(
+        'FAIL',
+      );
+    });
+
+    it('a workshop with no session cannot be passed', () => {
+      expect(
+        evaluateWorkshopResult({
+          daysAttended: 0,
+          finalScore: 100,
+          passMark,
+          workshopDays: 0,
+        }),
+      ).toBe('FAIL');
+    });
+
+    it('assumes the brief’s 3 days when the number is not given', () => {
+      expect(
+        evaluateWorkshopResult({ daysAttended: 1, finalScore: 90, passMark }),
+      ).toBe('FAIL');
+    });
   });
 
   it("uses the assessment's own pass mark rather than a hard-coded 60", () => {

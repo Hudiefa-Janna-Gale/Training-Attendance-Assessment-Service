@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { configureApp } from './app.setup.js';
 import type { Env } from './config/env.validation.js';
+import { connectBroker } from './messaging/connect-broker.js';
 
 async function bootstrap() {
   const app = configureApp(await NestFactory.create(AppModule));
@@ -27,9 +28,25 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
 
+  const log = new Logger('Bootstrap');
+
+  // The web UI (and other services) can also ask over RabbitMQ. The broker may come up after the
+  // service does, so this connects in the background instead of holding the HTTP API back.
+  const brokerUrl = config.get<string>('RABBITMQ_URL');
+  if (brokerUrl) {
+    const queue = config.getOrThrow<string>('RABBITMQ_QUEUE');
+    connectBroker(app, brokerUrl, queue);
+    app.startAllMicroservices().then(
+      () => log.log(`RabbitMQ gateway on queue "${queue}"`),
+      (error: unknown) => log.error('RabbitMQ gateway failed to start', error),
+    );
+  } else {
+    log.warn('RABBITMQ_URL is not set: only the HTTP API is available');
+  }
+
   const port = config.getOrThrow<number>('PORT');
   await app.listen(port);
-  new Logger('Bootstrap').log(
+  log.log(
     `API on http://localhost:${port}  ·  docs on http://localhost:${port}/docs`,
   );
 }

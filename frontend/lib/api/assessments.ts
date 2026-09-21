@@ -4,26 +4,33 @@ import type {
   CreateAssessmentInput,
   SubmittedScore,
 } from "@/types/training";
-import { apiFetch, apiFetchOrNull } from "./client";
+import { call, callOrNull } from "./client";
+import { PATTERNS } from "./patterns";
 
-/** POST /assessments — the workshop's final (day 3) or an optional daily quiz. */
+/** The workshop's final (day 3) or an optional daily quiz. */
 export function createAssessment(input: CreateAssessmentInput): Promise<Assessment> {
-  return apiFetch<Assessment>("/assessments", { method: "POST", body: input });
+  return call<Assessment>(PATTERNS.createAssessment, input);
 }
 
-/** GET /assessments/:id/scores — the assessment with all its scores; null when unknown. */
+/** Every assessment, newest first. */
+export function listAssessments(): Promise<Assessment[]> {
+  return call<Assessment[]>(PATTERNS.listAssessments);
+}
+
+/** The assessment with all its scores; null when unknown. */
 export function getScores(assessmentId: string): Promise<AssessmentScores | null> {
-  return apiFetchOrNull<AssessmentScores>(`/assessments/${encodeURIComponent(assessmentId)}/scores`);
+  return callOrNull<AssessmentScores>(PATTERNS.getScores, { assessment_id: assessmentId });
 }
 
-/** POST /assessments/:id/scores — the service computes PASS/FAIL for the score. */
+/** Saves a score; the service computes PASS/FAIL for it. */
 export function submitScore(
   assessmentId: string,
   participantId: string,
   score: number,
 ): Promise<SubmittedScore> {
-  return apiFetch<SubmittedScore>(`/assessments/${encodeURIComponent(assessmentId)}/scores`, {
-    method: "POST",
-    body: { participant_id: participantId, score },
+  return call<SubmittedScore>(PATTERNS.submitScore, {
+    assessment_id: assessmentId,
+    participant_id: participantId,
+    score,
   });
 }

@@ -18,7 +18,7 @@ export class ResultsController {
   @ApiOperation({
     summary: 'Get the final PASS/FAIL result of a participant for a workshop',
     description:
-      "Consumed by the Feedback, Certificate & Notification Service. PASS requires attending at least 2 of the 3 days AND scoring at or above the final assessment's pass mark.",
+      "Consumed by the Feedback, Certificate & Notification Service. PASS requires attending at least 2 days (every day, for a workshop with fewer than 2) AND scoring at or above the final assessment's pass mark.",
   })
   @ApiParam({ name: 'id', example: 'P-001', description: 'participant_id' })
   @ApiParam({ name: 'workshop_id', example: 'WS-2025-001' })

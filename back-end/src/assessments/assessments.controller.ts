@@ -40,6 +40,17 @@ export class AssessmentsController {
     return this.assessments.create(dto);
   }
 
+  @Get()
+  @ApiOperation({
+    summary: 'List all assessments, newest first',
+    description:
+      "Not in the brief's suggested list; added so created assessments can be shown.",
+  })
+  @ApiOkResponse({ type: [AssessmentResponseDto] })
+  list(): Promise<AssessmentResponseDto[]> {
+    return this.assessments.list();
+  }
+
   @Post(':id/scores')
   @ApiOperation({
     summary: "Submit a participant's score",

@@ -32,6 +32,17 @@ export class SessionsController {
     return this.sessions.create(dto);
   }
 
+  @Get()
+  @ApiOperation({
+    summary: 'List all sessions, newest first',
+    description:
+      "Not in the brief's suggested list; added so created sessions can be shown. Same objects as GET /sessions/:id.",
+  })
+  @ApiOkResponse({ type: [SessionResponseDto] })
+  list(): Promise<SessionResponseDto[]> {
+    return this.sessions.list();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get session details' })
   @ApiParam({ name: 'id', example: 'SES-001', description: 'session_id' })

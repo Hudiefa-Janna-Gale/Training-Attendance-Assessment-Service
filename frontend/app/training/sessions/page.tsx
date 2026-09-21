@@ -1,70 +1,53 @@
-import Link from "next/link";
-import LookupForm from "@/components/training/LookupForm";
-import PageHeader from "@/components/training/PageHeader";
+import { Suspense } from "react";
+import CreateDrawer from "@/components/training/CreateDrawer";
+import Page from "@/components/training/Page";
 import SessionForm from "@/components/training/SessionForm";
-import { getSession } from "@/lib/api/sessions";
-import { formatDate } from "@/lib/format";
-import { firstParam } from "@/lib/params";
+import SessionsTable from "@/components/training/SessionsTable";
+import { FormSkeleton, SheetSkeleton } from "@/components/training/Skeletons";
+import { listAssessments } from "@/lib/api/assessments";
+import { listSessions } from "@/lib/api/sessions";
+import { dayOptions, facilitatorOptions, topicOptions, workshopOptions } from "@/lib/catalog";
 
-export default async function SessionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ session?: string | string[] }>;
-}) {
-  const sessionId = firstParam((await searchParams).session);
-  const session = sessionId ? await getSession(sessionId) : null;
-
+/**
+ * The title bar and the "New session" button are static (prerendered once). Only what comes from
+ * the Training service is fetched per request: the form's pick-lists and the table of sessions.
+ */
+export default function SessionsPage() {
   return (
-    <div className="content">
-      <PageHeader
-        title="Training sessions"
-        subtitle="Create a session and assign its facilitator and topic."
-      />
-
-      <div className="card page-card">
-        <div className="card-head">
-          <h2>Create a session</h2>
-        </div>
-        <SessionForm />
-      </div>
-
-      <div className="card page-card">
-        <div className="card-head">
-          <h2>Find a session</h2>
-        </div>
-        <LookupForm
-          fields={[{ name: "session", label: "Session ID", placeholder: "SES-001", defaultValue: sessionId }]}
-          submitLabel="Find session"
-        />
-
-        {sessionId && !session && (
-          <p className="not-found" role="status">
-            There is no session <strong>{sessionId}</strong>.
-          </p>
-        )}
-
-        {session && (
-          <div className="detail">
-            <div className="card-head">
-              <h2>{session.session_id}</h2>
-              <Link
-                className="btn btn-ghost"
-                href={`/training/attendance?session=${encodeURIComponent(session.session_id)}`}
-              >
-                Attendance →
-              </Link>
-            </div>
-            <dl className="facts">
-              <div><dt>Workshop</dt><dd>{session.workshop_id}</dd></div>
-              <div><dt>Day</dt><dd>Day {session.day}</dd></div>
-              <div><dt>Date</dt><dd>{formatDate(session.date)}</dd></div>
-              <div><dt>Time</dt><dd>{session.time_slot}</dd></div>
-              <div><dt>Facilitator</dt><dd>{session.facilitator_id}</dd></div>
-              <div><dt>Topic</dt><dd>{session.topic_id}</dd></div>
-            </dl>
-          </div>
-        )}
-      </div>
-    </div>
+    <Page
+      title="Training sessions"
+      subtitle="Give each session a facilitator and a topic."
+      actions={
+        <CreateDrawer
+          label="New session"
+          title="New session"
+          description="Assign a facilitator and a topic to one day of a workshop."
+        >
+          <Suspense fallback={<FormSkeleton />}>
+            <NewSessionForm />
+          </Suspense>
+        </CreateDrawer>
+      }
+    >
+      <Suspense fallback={<SheetSkeleton />}>
+        <SessionList />
+      </Suspense>
+    </Page>
   );
+}
+
+async function NewSessionForm() {
+  const [sessions, assessments] = await Promise.all([listSessions(), listAssessments()]);
+  return (
+    <SessionForm
+      workshops={workshopOptions(sessions, assessments)}
+      facilitators={facilitatorOptions(sessions)}
+      topics={topicOptions(sessions)}
+      days={dayOptions(sessions, assessments)}
+    />
+  );
+}
+
+async function SessionList() {
+  return <SessionsTable sessions={await listSessions()} />;
 }

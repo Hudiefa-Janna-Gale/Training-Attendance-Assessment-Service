@@ -10,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { IsBusinessId } from '../../common/external-id.decorator.js';
+import { MAX_DAY } from '../../common/workshop-days.js';
 
 export class CreateSessionDto {
   @ApiPropertyOptional({
@@ -35,12 +36,12 @@ export class CreateSessionDto {
   @ApiProperty({
     example: 1,
     minimum: 1,
-    maximum: 3,
-    description: 'Workshop day (1–3)',
+    maximum: MAX_DAY,
+    description: `Workshop day, 1 to ${MAX_DAY} (a usual workshop runs 3 days)`,
   })
   @IsInt()
   @Min(1)
-  @Max(3)
+  @Max(MAX_DAY)
   day: number;
 
   @ApiProperty({ example: '2025-09-01', description: 'YYYY-MM-DD' })

@@ -8,7 +8,7 @@ export class ResultResponseDto {
     enum: AssessmentResult,
     example: AssessmentResult.PASS,
     description:
-      "PASS = attended at least 2 of the 3 days AND scored at or above the final assessment's pass mark; FAIL otherwise.",
+      "PASS = attended at least 2 days (every day, for a workshop with fewer than 2) AND scored at or above the final assessment's pass mark; FAIL otherwise.",
   })
   result: AssessmentResult;
   @ApiProperty({

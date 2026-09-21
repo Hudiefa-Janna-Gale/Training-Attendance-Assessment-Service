@@ -23,7 +23,7 @@ export default function AddParticipant({
     if (ids.length === 0 && invalid.length === 0) return;
     if (invalid.length > 0) {
       return setError(
-        `${invalid.join(", ")}: use letters, digits, “-” or “_” (max 64), e.g. P-007.`,
+        `${invalid.join(", ")}: use letters, digits, “-” or “_” (max 64), like P-007.`,
       );
     }
     const fresh = ids.filter((id) => !exists(id));
@@ -34,7 +34,7 @@ export default function AddParticipant({
   }
 
   return (
-    <div className="add-participant">
+    <div>
       <div className="add-row">
         <input
           className="input"
@@ -47,16 +47,16 @@ export default function AddParticipant({
               add();
             }
           }}
-          placeholder="Participant ID(s), e.g. P-007 or P-007, P-008"
+          placeholder="Add participants: P-007 or P-007, P-008"
           aria-label="Participant ID or IDs to add"
           aria-invalid={error !== null}
         />
-        <button type="button" className="btn btn-ghost" onClick={add}>
-          + Add
+        <button type="button" className="btn btn-quiet" onClick={add}>
+          Add to list
         </button>
       </div>
       {error && (
-        <p className="field-error" role="alert">
+        <p className="add-error" role="alert">
           {error}
         </p>
       )}

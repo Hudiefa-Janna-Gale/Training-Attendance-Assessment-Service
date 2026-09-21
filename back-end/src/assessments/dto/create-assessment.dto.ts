@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { IsBusinessId } from '../../common/external-id.decorator.js';
+import { MAX_DAY } from '../../common/workshop-days.js';
 import { AssessmentType } from '../../generated/prisma/enums.js';
 
 export class CreateAssessmentDto {
@@ -35,10 +36,15 @@ export class CreateAssessmentDto {
   @MaxLength(200)
   title: string;
 
-  @ApiProperty({ example: 3, minimum: 1, maximum: 3 })
+  @ApiProperty({
+    example: 3,
+    minimum: 1,
+    maximum: MAX_DAY,
+    description: `Workshop day, 1 to ${MAX_DAY}. A FINAL must be on day 3; a QUIZ can be on any day.`,
+  })
   @IsInt()
   @Min(1)
-  @Max(3)
+  @Max(MAX_DAY)
   day: number;
 
   @ApiPropertyOptional({

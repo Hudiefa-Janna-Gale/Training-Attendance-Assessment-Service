@@ -28,5 +28,5 @@ COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
 USER node
 EXPOSE 3000
-# BACKEND_URL (where the Training service listens) is read at request time.
+# RABBITMQ_URL (the broker the Training service is reached through) is read at request time.
 CMD ["node", "server.js"]

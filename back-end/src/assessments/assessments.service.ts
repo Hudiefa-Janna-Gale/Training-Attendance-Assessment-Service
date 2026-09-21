@@ -84,6 +84,14 @@ export class AssessmentsService {
     return toAssessmentResponse(assessment);
   }
 
+  /** Every assessment, newest first, so what was just created is on top. */
+  async list(): Promise<AssessmentResponseDto[]> {
+    const assessments = await this.prisma.assessment.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return assessments.map(toAssessmentResponse);
+  }
+
   async submitScore(
     assessmentId: string,
     dto: SubmitScoreDto,

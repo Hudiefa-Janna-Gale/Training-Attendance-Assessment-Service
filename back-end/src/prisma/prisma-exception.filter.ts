@@ -8,6 +8,41 @@ import {
 import type { Response } from 'express';
 import { Prisma } from '../generated/prisma/client.js';
 
+/** How a database error is reported: the status, and the same words on every transport. */
+export function translatePrismaError(e: Prisma.PrismaClientKnownRequestError): {
+  status: number;
+  error: string;
+  message: string;
+} {
+  switch (e.code) {
+    case 'P2002':
+      return {
+        status: HttpStatus.CONFLICT,
+        error: 'Conflict',
+        message: 'A record with the same unique value already exists',
+      };
+    case 'P2003':
+      return {
+        status: HttpStatus.CONFLICT,
+        error: 'Conflict',
+        message:
+          'The record is referenced by, or references, a record that does not exist',
+      };
+    case 'P2025':
+      return {
+        status: HttpStatus.NOT_FOUND,
+        error: 'Not Found',
+        message: 'Record not found',
+      };
+    default:
+      return {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        error: 'Internal Server Error',
+        message: 'Unexpected database error',
+      };
+  }
+}
+
 /**
  * Backstop for database errors that slip past the services' explicit checks
  * (typically two concurrent requests racing for the same unique key). Turns
@@ -20,39 +55,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
   catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
     const res = host.switchToHttp().getResponse<Response>();
 
-    const { status, error, message } = this.translate(exception);
+    const { status, error, message } = translatePrismaError(exception);
     if (status >= 500) this.logger.error(exception.message, exception.stack);
 
     res.status(status).json({ statusCode: status, message, error });
-  }
-
-  private translate(e: Prisma.PrismaClientKnownRequestError) {
-    switch (e.code) {
-      case 'P2002':
-        return {
-          status: HttpStatus.CONFLICT,
-          error: 'Conflict',
-          message: 'A record with the same unique value already exists',
-        };
-      case 'P2003':
-        return {
-          status: HttpStatus.CONFLICT,
-          error: 'Conflict',
-          message:
-            'The record is referenced by, or references, a record that does not exist',
-        };
-      case 'P2025':
-        return {
-          status: HttpStatus.NOT_FOUND,
-          error: 'Not Found',
-          message: 'Record not found',
-        };
-      default:
-        return {
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          error: 'Internal Server Error',
-          message: 'Unexpected database error',
-        };
-    }
   }
 }

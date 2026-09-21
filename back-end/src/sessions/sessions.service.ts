@@ -61,6 +61,14 @@ export class SessionsService {
     return toSessionResponse(session);
   }
 
+  /** Every session, newest first, so what was just created is on top. */
+  async list(): Promise<SessionResponseDto[]> {
+    const sessions = await this.prisma.session.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return sessions.map(toSessionResponse);
+  }
+
   async findOne(sessionId: string): Promise<SessionResponseDto> {
     const session = await this.prisma.session.findUnique({
       where: { sessionId },

@@ -2,6 +2,9 @@ export interface Env {
   PORT: number;
   CORS_ORIGIN: string;
   DATABASE_URL: string;
+  /** RabbitMQ connection string; when it is not set the service answers over HTTP only. */
+  RABBITMQ_URL?: string;
+  RABBITMQ_QUEUE: string;
 }
 
 /** Fails fast at boot instead of on the first request that touches the DB. */
@@ -25,9 +28,24 @@ export function validateEnv(
     );
   }
 
+  const brokerUrl = raw.RABBITMQ_URL;
+  if (
+    brokerUrl !== undefined &&
+    brokerUrl !== '' &&
+    (typeof brokerUrl !== 'string' || !/^amqps?:\/\//.test(brokerUrl))
+  ) {
+    throw new Error(
+      'RABBITMQ_URL must be a RabbitMQ connection string (amqp://user:pass@host:5672), or left unset',
+    );
+  }
+
   return {
     ...raw,
     PORT: port,
     CORS_ORIGIN: String(raw.CORS_ORIGIN ?? 'http://localhost:3000'),
+    RABBITMQ_URL: brokerUrl === '' ? undefined : brokerUrl,
+    RABBITMQ_QUEUE: String(
+      raw.RABBITMQ_QUEUE ?? 'training_attendance_assessment',
+    ),
   };
 }

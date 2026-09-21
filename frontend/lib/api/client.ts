@@ -1,13 +1,13 @@
-// Server-side HTTP client for the Training, Attendance & Assessment Service.
+// Server-side client for the Training, Attendance & Assessment Service.
 //
-// Only Server Components and Server Actions import this, so the browser never
-// talks to the API directly (no CORS, and BACKEND_URL stays private).
+// Requests go through RabbitMQ (see rabbitmq.ts), not HTTP: the web UI's server sends each one to the
+// service's queue and waits for the reply. Only Server Components and Server Actions import this, so
+// the browser never talks to the broker or the service.
 
-export function backendUrl(): string {
-  return (process.env.BACKEND_URL ?? "http://localhost:4000").replace(/\/+$/, "");
-}
+import { connection } from "next/server";
+import { describeBroker, rpcCall, RpcFailure, RpcUnavailable } from "./rabbitmq";
 
-/** A failed call to the service. `status` 0 means it could not be reached at all. */
+/** A failed request to the service. `status` 0 means it could not be reached at all. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -23,45 +23,40 @@ export class ApiError extends Error {
   }
 }
 
-/** Pulls the message(s) out of a NestJS error body: { message: string | string[] }. */
-export function extractMessages(body: unknown, fallback: string): string[] {
-  if (body && typeof body === "object" && "message" in body) {
-    const { message } = body as { message: unknown };
-    if (Array.isArray(message)) return message.map(String);
-    if (typeof message === "string") return [message];
+/**
+ * The service answers a failure as { status, error, messages }, the same status and words as its
+ * HTTP API. Anything else (the transport's own "no handler", a plain string) still becomes an ApiError.
+ */
+export function failureFrom(failure: unknown): ApiError {
+  if (failure && typeof failure === "object") {
+    const { status, messages, message } = failure as { status?: unknown; messages?: unknown; message?: unknown };
+    if (typeof status === "number" && Array.isArray(messages) && messages.length > 0) {
+      return new ApiError(status, messages.map(String));
+    }
+    if (typeof message === "string") return new ApiError(500, [message]);
   }
-  return [fallback];
+  if (typeof failure === "string") return new ApiError(502, [failure]);
+  return new ApiError(500, ["The service could not answer the request"]);
 }
 
-export async function apiFetch<T>(
-  path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
-): Promise<T> {
-  const url = `${backendUrl()}${path}`;
-
-  let res: Response;
+/** Asks the service for one operation (a pattern of ./patterns) and returns its answer. */
+export async function call<T>(pattern: string, data: unknown = {}): Promise<T> {
+  await connection(); // asking the service is per-request work, never done while prerendering
   try {
-    res = await fetch(url, {
-      method: options.method ?? "GET",
-      headers: options.body === undefined ? undefined : { "content-type": "application/json" },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      cache: "no-store",
-    });
-  } catch {
-    throw new ApiError(0, [`Cannot reach the Training service at ${backendUrl()}`]);
+    return (await rpcCall(pattern, data)) as T;
+  } catch (error) {
+    if (error instanceof RpcFailure) throw failureFrom(error.failure);
+    const reason = error instanceof RpcUnavailable ? `${error.message}. ` : "";
+    throw new ApiError(0, [
+      `${reason}Cannot reach the Training service through RabbitMQ at ${describeBroker()}. Check that RabbitMQ and the API are running.`,
+    ]);
   }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, extractMessages(body, res.statusText || "Request failed"));
-  }
-  return (await res.json()) as T;
 }
 
-/** Like apiFetch for a GET, but a 404 becomes `null` (looked-up id does not exist). */
-export async function apiFetchOrNull<T>(path: string): Promise<T | null> {
+/** Like `call`, but a 404 ("no such session") becomes `null`. */
+export async function callOrNull<T>(pattern: string, data: unknown = {}): Promise<T | null> {
   try {
-    return await apiFetch<T>(path);
+    return await call<T>(pattern, data);
   } catch (error) {
     if (error instanceof ApiError && error.notFound) return null;
     throw error;

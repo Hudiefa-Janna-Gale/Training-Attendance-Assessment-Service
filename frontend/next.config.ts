@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
   turbopack: { root: appRoot },
   outputFileTracingRoot: appRoot,
   poweredByHeader: false,
+  // The RabbitMQ client is plain Node code: load it as it is instead of bundling it.
+  serverExternalPackages: ["amqplib"],
+  // Static shell + streamed data: the frame of every page is prerendered once, and only what a page
+  // reads from the Training service is fetched per request (inside <Suspense>).
+  cacheComponents: true,
+  // `next dev` would otherwise write AGENTS.md / CLAUDE.md into the project.
+  agentRules: false,
 };
 
 export default nextConfig;

@@ -5,5 +5,6 @@ import { AssessmentsService } from './assessments.service.js';
 @Module({
   controllers: [AssessmentsController],
   providers: [AssessmentsService],
+  exports: [AssessmentsService],
 })
 export class AssessmentsModule {}

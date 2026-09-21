@@ -1,12 +1,13 @@
 # Training, Attendance & Assessment Service — PostgreSQL + Prisma + NestJS API + Next.js web UI
 #
-#   docker compose up -d --build   # everything: database -> migrations -> API -> web
-#   docker compose up -d db        # database only (run the API / web on your machine)
+#   docker compose up -d --build   # everything: database + RabbitMQ -> migrations -> API -> web
+#   docker compose up -d db rabbitmq   # the backing services only (run the API / web on your machine)
 #
 # Values come from ./.env (see .env.example); every one has a working default.
 name: attendance-service
 
 x-db-url: &db-url postgresql://${POSTGRES_USER:-attendance}:${POSTGRES_PASSWORD:-attendance_dev_password}@db:5432/${POSTGRES_DB:-attendance_service}?schema=public
+x-rabbit-url: &rabbit-url amqp://${RABBITMQ_USER:-training}:${RABBITMQ_PASSWORD:-training_dev_password}@rabbitmq:5672
 
 services:
   db:
@@ -26,6 +27,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+
+  # The message broker: the web UI asks the API through it (the gateway), instead of over HTTP.
+  # Management UI on http://localhost:15672 (log in with RABBITMQ_USER / RABBITMQ_PASSWORD).
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-training}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-training_dev_password}
+    ports:
+      - '${RABBITMQ_PORT:-5672}:5672'
+      - '${RABBITMQ_UI_PORT:-15672}:15672'
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
   # One-shot job: applies pending Prisma migrations, then exits.
   migrate:
@@ -50,11 +71,15 @@ services:
       PORT: 4000
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       DATABASE_URL: *db-url
+      # The queue the web UI (and other services) send requests to, next to the HTTP API.
+      RABBITMQ_URL: *rabbit-url
     ports:
       - '${PORT:-4000}:4000'
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -62,21 +87,23 @@ services:
       retries: 5
       start_period: 15s
 
-  # Next.js UI. Its server talks to the API over the compose network; the browser only
+  # Next.js UI. Its server asks the API through RabbitMQ (no HTTP between them); the browser only
   # ever talks to this service.
   web:
     build:
       context: ./frontend
     restart: unless-stopped
     environment:
-      BACKEND_URL: http://api:4000
+      RABBITMQ_URL: *rabbit-url
     ports:
       - '${WEB_PORT:-3000}:3000'
     depends_on:
       api:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/icon.svg').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/images/somnogFivIcon.png').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -84,3 +111,4 @@ services:
 
 volumes:
   pgdata:
+  rabbitmqdata:

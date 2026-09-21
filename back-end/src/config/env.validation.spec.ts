@@ -29,6 +29,38 @@ describe('validateEnv', () => {
     ).toThrow('DATABASE_URL');
   });
 
+  it('leaves RabbitMQ off unless RABBITMQ_URL is set, and names the default queue', () => {
+    expect(validateEnv({ DATABASE_URL: DB })).toMatchObject({
+      RABBITMQ_URL: undefined,
+      RABBITMQ_QUEUE: 'training_attendance_assessment',
+    });
+    expect(validateEnv({ DATABASE_URL: DB, RABBITMQ_URL: '' })).toMatchObject({
+      RABBITMQ_URL: undefined,
+    });
+  });
+
+  it('accepts amqp:// and amqps:// for RABBITMQ_URL, and a custom queue', () => {
+    expect(
+      validateEnv({
+        DATABASE_URL: DB,
+        RABBITMQ_URL: 'amqp://u:p@rabbitmq:5672',
+        RABBITMQ_QUEUE: 'my_queue',
+      }),
+    ).toMatchObject({
+      RABBITMQ_URL: 'amqp://u:p@rabbitmq:5672',
+      RABBITMQ_QUEUE: 'my_queue',
+    });
+    expect(() =>
+      validateEnv({ DATABASE_URL: DB, RABBITMQ_URL: 'amqps://u:p@host' }),
+    ).not.toThrow();
+  });
+
+  it('rejects a RABBITMQ_URL that is not an AMQP connection string', () => {
+    expect(() =>
+      validateEnv({ DATABASE_URL: DB, RABBITMQ_URL: 'http://localhost:15672' }),
+    ).toThrow('RABBITMQ_URL');
+  });
+
   it.each(['abc', '0', '70000', '3.5'])('rejects invalid PORT %s', (port) => {
     expect(() => validateEnv({ DATABASE_URL: DB, PORT: port })).toThrow('PORT');
   });

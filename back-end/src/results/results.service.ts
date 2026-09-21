@@ -12,7 +12,7 @@ export class ResultsService {
     participantId: string,
     workshopId: string,
   ): Promise<ResultResponseDto> {
-    const [presentRows, sessionCount, finalAssessment] = await Promise.all([
+    const [presentRows, sessionDays, finalAssessment] = await Promise.all([
       this.prisma.attendanceRecord.findMany({
         where: {
           participantId,
@@ -21,14 +21,19 @@ export class ResultsService {
         },
         select: { session: { select: { day: true } } },
       }),
-      this.prisma.session.count({ where: { workshopId } }),
+      // One row per day that has a session: how many days the workshop has.
+      this.prisma.session.findMany({
+        where: { workshopId },
+        select: { day: true },
+        distinct: ['day'],
+      }),
       this.prisma.assessment.findFirst({
         where: { workshopId, type: AssessmentType.FINAL },
         include: { scores: { where: { participantId } } },
       }),
     ]);
 
-    if (sessionCount === 0 && !finalAssessment) {
+    if (sessionDays.length === 0 && !finalAssessment) {
       throw new NotFoundException(
         `No sessions or assessments found for workshop ${workshopId}`,
       );
@@ -43,6 +48,7 @@ export class ResultsService {
       workshop_id: workshopId,
       result: evaluateWorkshopResult({
         daysAttended,
+        workshopDays: sessionDays.length,
         finalScore,
         passMark: finalAssessment?.passMark ?? 0,
       }),

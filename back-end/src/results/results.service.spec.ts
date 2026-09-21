@@ -4,7 +4,8 @@ import { ResultsService } from './results.service.js';
 
 interface Fixture {
   presentDays?: number[]; // one entry per `present` attendance record (duplicates = several sessions that day)
-  sessionCount?: number;
+  workshopDays?: number[]; // the days of the workshop that have a session
+
   finalAssessment?: {
     assessmentId: string;
     passMark: number;
@@ -15,7 +16,7 @@ interface Fixture {
 
 function serviceWith({
   presentDays = [],
-  sessionCount = 3,
+  workshopDays = [1, 2, 3],
   finalAssessment = null,
 }: Fixture) {
   const prisma = {
@@ -24,7 +25,9 @@ function serviceWith({
         .fn()
         .mockResolvedValue(presentDays.map((day) => ({ session: { day } }))),
     },
-    session: { count: vi.fn().mockResolvedValue(sessionCount) },
+    session: {
+      findMany: vi.fn().mockResolvedValue(workshopDays.map((day) => ({ day }))),
+    },
     assessment: { findFirst: vi.fn().mockResolvedValue(finalAssessment) },
   };
   return {
@@ -127,7 +130,7 @@ describe('ResultsService', () => {
   it('FAIL when the workshop has sessions but no final assessment yet', async () => {
     const { service } = serviceWith({
       presentDays: [1],
-      sessionCount: 2,
+      workshopDays: [1, 2],
       finalAssessment: null,
     });
 
@@ -137,8 +140,102 @@ describe('ResultsService', () => {
     });
   });
 
+  describe('a workshop with fewer than 3 days', () => {
+    it('a one-day workshop needs that one day: PASS with the day attended and a passing score', async () => {
+      const { service } = serviceWith({
+        presentDays: [1],
+        workshopDays: [1],
+        finalAssessment: finalWith(70),
+      });
+
+      await expect(service.getResult('P-001', 'WS-1')).resolves.toEqual({
+        participant_id: 'P-001',
+        workshop_id: 'WS-1',
+        result: 'PASS',
+        days_attended: 1,
+        final_score: 70,
+      });
+    });
+
+    it('a one-day workshop is still FAIL when the day was missed, or the score is short', async () => {
+      const missed = serviceWith({
+        presentDays: [],
+        workshopDays: [1],
+        finalAssessment: finalWith(95),
+      });
+      await expect(
+        missed.service.getResult('P-002', 'WS-1'),
+      ).resolves.toMatchObject({ result: 'FAIL', days_attended: 0 });
+
+      const short = serviceWith({
+        presentDays: [1],
+        workshopDays: [1],
+        finalAssessment: finalWith(40),
+      });
+      await expect(
+        short.service.getResult('P-003', 'WS-1'),
+      ).resolves.toMatchObject({ result: 'FAIL', days_attended: 1 });
+    });
+
+    it('a two-day workshop needs both days', async () => {
+      const both = serviceWith({
+        presentDays: [1, 2],
+        workshopDays: [1, 2],
+        finalAssessment: finalWith(80),
+      });
+      await expect(
+        both.service.getResult('P-001', 'WS-1'),
+      ).resolves.toMatchObject({ result: 'PASS' });
+
+      const one = serviceWith({
+        presentDays: [1],
+        workshopDays: [1, 2],
+        finalAssessment: finalWith(80),
+      });
+      await expect(
+        one.service.getResult('P-002', 'WS-1'),
+      ).resolves.toMatchObject({ result: 'FAIL' });
+    });
+
+    it('counts a workshop day once however many sessions it has, and days beyond 3 change nothing', async () => {
+      const { service, prisma } = serviceWith({
+        presentDays: [2, 5],
+        workshopDays: [1, 2, 5],
+        finalAssessment: finalWith(60),
+      });
+
+      await expect(service.getResult('P-001', 'WS-1')).resolves.toMatchObject({
+        result: 'PASS',
+        days_attended: 2,
+      });
+      expect(prisma.session.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workshopId: 'WS-1' },
+          distinct: ['day'],
+        }),
+      );
+    });
+
+    it('a workshop with a final assessment but no session cannot be passed (there is nothing to attend)', async () => {
+      const { service } = serviceWith({
+        presentDays: [],
+        workshopDays: [],
+        finalAssessment: finalWith(99),
+      });
+
+      await expect(service.getResult('P-001', 'WS-1')).resolves.toMatchObject({
+        result: 'FAIL',
+        days_attended: 0,
+        final_score: 99,
+      });
+    });
+  });
+
   it('404 when the workshop has neither sessions nor a final assessment', async () => {
-    const { service } = serviceWith({ sessionCount: 0, finalAssessment: null });
+    const { service } = serviceWith({
+      workshopDays: [],
+      finalAssessment: null,
+    });
 
     await expect(service.getResult('P-001', 'WS-NOPE')).rejects.toBeInstanceOf(
       NotFoundException,
